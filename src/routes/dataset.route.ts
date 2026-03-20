@@ -1,5 +1,5 @@
 import { Router } from "express";
-import * as datasetController from "../controllers/dataset.controller";
+import * as datasetController from "../controllers/Dataset.controller";
 import { verifyToken, requireRole } from "../middleware/VerifyToken";
 import { uploadBoth } from "../utils/uploadBoth";
 
