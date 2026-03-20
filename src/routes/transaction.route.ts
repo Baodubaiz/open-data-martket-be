@@ -1,5 +1,5 @@
 import { Router } from "express";
-import * as transactionController from "../controllers/transaction.controller";
+import * as transactionController from "../controllers/Transaction.controller";
 import { verifyToken, requireRole } from "../middleware/VerifyToken";
 
 const router = Router();

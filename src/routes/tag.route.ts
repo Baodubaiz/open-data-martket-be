@@ -1,5 +1,5 @@
 import { Router } from "express";
-import * as tagController from "../controllers/tag.controller";
+import * as tagController from "../controllers/Tag.controller";
 import { verifyToken, requireRole } from "../middleware/VerifyToken";
 
 const router = Router();
