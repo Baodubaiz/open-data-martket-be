@@ -1,0 +1,364 @@
+// 1. Datasource & Generator
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// 2. Enums
+enum Role {
+  buyer
+  seller
+  admin
+}
+
+enum SellerVerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PaymentMethod {
+  VND
+  ETH
+}
+
+enum PaymentStatus {
+  pending
+  completed
+  failed
+}
+
+enum ConfirmStatus {
+  waiting
+  confirmed
+  failed
+}
+
+enum WalletTxType {
+  DEPOSIT // Nạp tiền qua PayOS
+  PURCHASE // Buyer mua dataset
+  ESCROW_HOLD // Tiền giam cho seller
+  ESCROW_RELEASE // Giải ngân cho seller
+  WITHDRAW_REQ // Seller yêu cầu rút
+  WITHDRAW_DONE // Admin xác nhận đã trả
+  ADJUST // Admin cộng / trừ tay
+  ESCROW_REFUND
+}
+
+enum WalletTxStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum EscrowStatus {
+  HOLDING // đang giam
+  RELEASED // đã giải ngân cho seller
+  DISPUTED // buyer khiếu nại
+  REFUNDED // hoàn lại cho buyer
+  CANCELLED // huỷ đơn / huỷ escrow
+}
+
+enum WithdrawStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// 3. Models
+
+model User {
+  user_id        String   @id @default(uuid())
+  wallet_address String?  @unique
+  email          String?  @unique
+  password       String?
+  full_name      String?
+  phone_number   String?  @unique
+  bank_user_name String?
+  bank_account   String?  @unique
+  bank_name      String?
+  role           Role
+  is_active      Boolean  @default(true)
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  datasets            Dataset[]            @relation("UserDatasets")
+  orders              Order[]              @relation("UserOrders")
+  reviews             Review[]             @relation("UserReviews")
+  buyerConversations  Conversation[]       @relation("BuyerConversations")
+  sellerConversations Conversation[]       @relation("SellerConversations")
+  sentMessages        Message[]            @relation("MessageSender")
+  sellerVerifications SellerVerification[] @relation("UserSellerVerifications")
+
+  // [ADD] ví 1-1
+  wallet Wallet?
+
+  // [ADD] escrow (giam tiền)
+  escrowAsBuyer  Escrow[] @relation("EscrowBuyer")
+  escrowAsSeller Escrow[] @relation("EscrowSeller")
+
+  // [ADD] yêu cầu rút tiền
+  withdrawRequests         WithdrawRequest[] @relation("UserWithdraw")
+  approvedWithdrawRequests WithdrawRequest[] @relation("AdminApproveWithdraw")
+  wallet_deposits          WalletDeposit[] // <— Quan hệ ngược bắt buộc
+  complaints_as_buyer      Complaint[]       @relation("ComplaintBuyer")
+  complaints_as_seller     Complaint[]       @relation("ComplaintSeller")
+}
+
+model Category {
+  category_id String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  created_at  DateTime @default(now())
+
+  datasets Dataset[]
+}
+
+model Dataset {
+  dataset_id    String   @id @default(uuid())
+  seller_id     String
+  category_id   String
+  title         String
+  description   String?
+  price_vnd     Float?
+  price_eth     Float?
+  file_url      String
+  thumbnail_url String?
+  file_size_mb  String?
+  file_format   String?
+  is_active     Boolean  @default(true)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  seller   User      @relation("UserDatasets", fields: [seller_id], references: [user_id], onDelete: Cascade)
+  category Category? @relation(fields: [category_id], references: [category_id])
+  tags     Tag[]
+  orders   Order[]
+  reviews  Review[]  @relation("DatasetReviews")
+}
+
+model Order {
+  order_id       String @id @default(uuid())
+  buyer_id       String
+  dataset_id     String
+  payment_method PaymentMethod
+  status         PaymentStatus @default(pending)
+  bank_ref       String
+  total_amount   Float
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  buyer    User     @relation("UserOrders", fields: [buyer_id], references: [user_id])
+  dataset  Dataset  @relation(fields: [dataset_id], references: [dataset_id], onDelete: Cascade)
+  txns     Transaction[]
+  reviews  Review[] @relation("OrderReviews")
+
+  complaint Complaint?
+
+  // CHỈ CẦN THẾ NÀY
+  escrow   Escrow?
+}
+
+
+model Transaction {
+  transaction_id String        @id @default(uuid())
+  order_id       String
+  tx_hash        String?
+  bank_ref       String?       @unique
+  status         ConfirmStatus @default(waiting)
+  created_at     DateTime      @default(now())
+
+  order Order @relation(fields: [order_id], references: [order_id], onDelete: Cascade)
+}
+
+model Review {
+  review_id  String   @id @default(uuid())
+  buyer_id   String
+  dataset_id String
+  order_id   String
+  rating     Int
+  comment    String?
+  reply      String?
+  created_at DateTime @default(now())
+
+  // Quan hệ NGƯỢC theo đúng User, Dataset, Order
+  buyer   User    @relation("UserReviews", fields: [buyer_id], references: [user_id])
+  dataset Dataset @relation("DatasetReviews", fields: [dataset_id], references: [dataset_id])
+  order   Order   @relation("OrderReviews", fields: [order_id], references: [order_id])
+}
+
+model Tag {
+  tag_id     String   @id @default(uuid())
+  dataset_id String
+  name       String
+  created_at DateTime @default(now())
+
+  dataset Dataset @relation(fields: [dataset_id], references: [dataset_id], onDelete: Cascade)
+}
+
+model Conversation {
+  id         String   @id @default(uuid())
+  buyer_id   String
+  seller_id  String
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  buyer    User      @relation("BuyerConversations", fields: [buyer_id], references: [user_id])
+  seller   User      @relation("SellerConversations", fields: [seller_id], references: [user_id])
+  messages Message[]
+}
+
+model Message {
+  id              String   @id @default(uuid())
+  conversation_id String
+  sender_id       String
+  content         String
+  is_read         Boolean  @default(false)
+  created_at      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversation_id], references: [id])
+  sender       User         @relation("MessageSender", fields: [sender_id], references: [user_id])
+}
+
+model SellerVerification {
+  id      String @id @default(uuid())
+  user_id String
+  user    User   @relation("UserSellerVerifications", fields: [user_id], references: [user_id])
+
+  full_name        String
+  phone_number     String?
+  id_number        String
+  bank_name        String
+  bank_user_name   String
+  bank_account     String
+  shop_description String?
+
+  front_image_url String
+  back_image_url  String
+
+  status      SellerVerificationStatus @default(PENDING)
+  ai_score    Int?
+  ai_analysis String?
+  admin_note  String?
+  reviewed_at DateTime?
+  created_at  DateTime                 @default(now())
+  updated_at  DateTime                 @updatedAt
+
+  @@index([user_id])
+}
+
+model Wallet {
+  wallet_id String @id @default(uuid())
+  user_id   String @unique
+
+  // Số dư khả dụng (buyer dùng mua, seller dùng rút)
+  balance Int @default(0)
+
+  // Tiền treo:
+  // - chờ giải ngân cho seller
+  // - chờ admin xử lý rút
+  pending_balance Int @default(0)
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  user         User                @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+  transactions WalletTransaction[]
+}
+
+model WalletTransaction {
+  wallet_tx_id     String         @id @default(uuid())
+  wallet_id        String
+  type             WalletTxType
+  status           WalletTxStatus @default(PENDING)
+  amount           Int // ảnh hưởng tới balance (không đụng pending_balance)
+  description      String?
+  ref_order_id     String? // cho PURCHASE
+  payos_order_code String?        @unique // cho DEPOSIT
+  bank_reference   String? // mã bank nếu cần
+  created_at       DateTime       @default(now())
+
+  wallet Wallet @relation(fields: [wallet_id], references: [wallet_id], onDelete: Cascade)
+}
+
+model Escrow {
+  escrow_id   String       @id @default(uuid())
+  order_id    String       @unique
+  buyer_id    String
+  seller_id   String
+  amount      Int
+  status      EscrowStatus @default(HOLDING)
+  release_at  DateTime // now() + 3 ngày
+  created_at  DateTime     @default(now())
+  released_at DateTime?
+
+  order Order @relation(fields: [order_id], references: [order_id])
+
+  buyer        User    @relation("EscrowBuyer", fields: [buyer_id], references: [user_id])
+  seller       User    @relation("EscrowSeller", fields: [seller_id], references: [user_id])
+  release_note String? @db.Text // 👈 ghi chú khi giải ngân / hoàn tiền
+  extend_note  String? @db.Text // 👈 ghi chú khi gia hạn
+}
+
+model WithdrawRequest {
+  withdraw_id  String         @id @default(uuid())
+  user_id      String
+  amount       Int
+  status       WithdrawStatus @default(PENDING)
+  created_at   DateTime       @default(now())
+  processed_at DateTime?
+  admin_id     String?
+  note         String?
+
+  user  User  @relation("UserWithdraw", fields: [user_id], references: [user_id])
+  admin User? @relation("AdminApproveWithdraw", fields: [admin_id], references: [user_id])
+}
+
+model WalletDeposit {
+  id         String   @id @default(uuid())
+  user_id    String
+  amount     Int
+  status     String   @default("PENDING")
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  user User @relation(fields: [user_id], references: [user_id])
+}
+
+model Complaint {
+  id            String          @id @default(uuid())
+  order_id      String          @unique
+  buyer_id      String
+  seller_id     String
+  reason        String
+  phone         String
+  status        ComplaintStatus @default(PENDING)
+  seller_action SellerAction?
+  created_at    DateTime        @default(now())
+
+  // Liên kết đến Order
+  order Order @relation(fields: [order_id], references: [order_id])
+
+  // Liên kết đến User (buyer)
+  buyer User @relation("ComplaintBuyer", fields: [buyer_id], references: [user_id])
+
+  // Liên kết đến User (seller)
+  seller User @relation("ComplaintSeller", fields: [seller_id], references: [user_id])
+}
+
+enum ComplaintStatus {
+  PENDING // Buyer vừa gửi
+  SELLER_COMPENSATED // Seller đã đền bù
+  SELLER_REFUND // Seller yêu cầu hoàn tiền
+  ADMIN_REFUNDED // Admin duyệt hoàn tiền
+  ADMIN_CLOSED // Admin đóng khiếu nại
+}
+
+enum SellerAction {
+  COMPENSATED
+  REQUEST_REFUND
+}
