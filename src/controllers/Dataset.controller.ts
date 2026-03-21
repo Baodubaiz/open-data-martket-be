@@ -6,14 +6,15 @@ import { readPreviewFile } from "../utils/readPreview";
 import { parse } from "csv-parse";
 import fs from "fs";
 import { PrismaClient } from "@prisma/client";
-import jwt, { JwtPayload } from "jsonwebtoken"
+import jwt, { JwtPayload } from "jsonwebtoken";
+import { uploadStream } from "../utils/cloudinary";
 
 // 🟢 Seller tạo dataset
 export const create = async (req: AuthRequest, res: Response) => {
   try {
     if (!req.user) return res.status(401).json({ error: "Unauthorized" });
 
-    // 📦 Lấy file từ req.files (multer.fields)
+    // 📦 Lấy file từ req.files (multer.fields bằng memoryStorage)
     const files = req.files as {
       thumbnail_url?: Express.Multer.File[];
       file_url?: Express.Multer.File[];
@@ -22,17 +23,38 @@ export const create = async (req: AuthRequest, res: Response) => {
     const thumbnail = files?.thumbnail_url?.[0];
     const datasetFile = files?.file_url?.[0];
 
-    // ⚙️ Lấy thông tin file
+    // ⚙️ Lấy thông tin file & setup Cloudinary Upload
     let fileSizeMB: string | null = null;
     let fileFormat: string | null = null;
+    let thumbnailUrlToSave: string | null = null;
+    let fileUrlToSave: string | null = null;
+
+    const uploadTasks: Promise<any>[] = [];
+
+    if (thumbnail) {
+      uploadTasks.push(
+        uploadStream(thumbnail.buffer, "datasets/images", "image").then(
+          (res) => (thumbnailUrlToSave = res.secure_url)
+        )
+      );
+    }
 
     if (datasetFile) {
-      const fileStats = fs.statSync(datasetFile.path);
-      fileSizeMB = (fileStats.size / (1024 * 1024)).toFixed(2); // 💾 MB
+      fileSizeMB = (datasetFile.size / (1024 * 1024)).toFixed(2); // 💾 MB
       fileFormat = path.extname(datasetFile.originalname)
         .replace(".", "")
-        .toUpperCase(); // CSV, XLSX, JSON...
+        .toUpperCase() || "CSV";
+
+      // Sử dụng raw để lưu chính xác file type thay vì ảnh
+      uploadTasks.push(
+        uploadStream(datasetFile.buffer, "datasets/files", "raw").then(
+          (res) => (fileUrlToSave = res.secure_url)
+        )
+      );
     }
+
+    // Đợi quá trình upload tới Cloudinary hoàn tất đồng thời
+    await Promise.all(uploadTasks);
 
     // ⚙️ Chuẩn bị dữ liệu để lưu
     const body = {
@@ -40,8 +62,8 @@ export const create = async (req: AuthRequest, res: Response) => {
       price_vnd: Number(req.body.price_vnd) || 0,
       price_eth: Number(req.body.price_eth) || 0,
       is_active: req.body.is_active === "true",
-      thumbnail_url: thumbnail ? `/upload/thumbnails/${thumbnail.filename}` : null,
-      file_url: datasetFile ? `/upload/datasets/${datasetFile.filename}` : null,
+      thumbnail_url: thumbnailUrlToSave,
+      file_url: fileUrlToSave,
       file_size_mb: fileSizeMB,
       file_format: fileFormat,
     };
@@ -50,7 +72,7 @@ export const create = async (req: AuthRequest, res: Response) => {
     const dataset = await datasetService.create(req.user.user_id, body);
 
     res.status(201).json({
-      message: "✅ Dataset created successfully",
+      message: "✅ Dataset created successfully on Serverless (Cloudinary)",
       data: dataset,
     });
   } catch (err: any) {
@@ -146,19 +168,34 @@ export const update = async (req: AuthRequest, res: Response) => {
     if (body.is_active !== undefined)
       body.is_active = body.is_active === "true" || body.is_active === true;
 
+    const uploadTasks: Promise<any>[] = [];
+
     // 🖼️ Chỉ cập nhật thumbnail nếu có file mới
     if (thumbnail) {
-      body.thumbnail_url = `/upload/thumbnails/${thumbnail.filename}`;
+      uploadTasks.push(
+        uploadStream(thumbnail.buffer, "datasets/images", "image").then(
+          (res) => (body.thumbnail_url = res.secure_url)
+        )
+      );
     } else {
       delete body.thumbnail_url; // giữ nguyên cũ
     }
 
     // 📂 Cập nhật dataset file nếu có file mới
     if (datasetFile) {
-      body.file_url = `/upload/datasets/${datasetFile.filename}`;
+      body.file_size_mb = (datasetFile.size / (1024 * 1024)).toFixed(2);
+      body.file_format = path.extname(datasetFile.originalname).replace(".", "").toUpperCase() || "CSV";
+
+      uploadTasks.push(
+        uploadStream(datasetFile.buffer, "datasets/files", "raw").then(
+          (res) => (body.file_url = res.secure_url)
+        )
+      );
     } else {
       delete body.file_url; // giữ nguyên cũ
     }
+
+    await Promise.all(uploadTasks);
 
     // 💾 Gọi service cập nhật
     const dataset = await datasetService.update(req.params.id, req.user, body);
