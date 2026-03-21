@@ -31,7 +31,8 @@ export function verifyToken(req: AuthRequest, res: Response, next: NextFunction)
 
     // 3. Nếu vẫn không có, báo lỗi
     if (!token) {
-        return res.status(401).json({ error: "Thiếu token" });
+        res.status(401).json({ error: "Thiếu token" });
+        return;
     }
 
     try {
@@ -39,7 +40,8 @@ export function verifyToken(req: AuthRequest, res: Response, next: NextFunction)
         req.user = decoded;
         next();
     } catch (err) {
-        return res.status(403).json({ error: "Token không hợp lệ hoặc hết hạn" });
+        res.status(403).json({ error: "Token không hợp lệ hoặc hết hạn" });
+        return;
     }
 }
 
