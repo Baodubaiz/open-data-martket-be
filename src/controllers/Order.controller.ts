@@ -8,7 +8,7 @@ export const getAll = async (req: AuthRequest, res: Response) => {
     const orders = await orderService.getAll(req.user!);
     res.json(orders);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(400).json({ error: err.message });
   }
 };
 
@@ -32,7 +32,7 @@ export const getById = async (req: AuthRequest, res: Response) => {
   } catch (err: any) {
     // 3. Log lỗi ra terminal để bạn dễ debug
     console.error("❌ Error in getById:", err.message);
-    return res.status(500).json({ error: err.message });
+    return res.status(400).json({ error: err.message });
   }
 };
 
@@ -47,12 +47,16 @@ export const create = async (req: AuthRequest, res: Response) => {
       return res.status(403).json({ message: "Only buyers can create orders" });
     }
 
+    if (!req.body.dataset_id) {
+       return res.status(400).json({ message: "Thiếu dữ liệu: dataset_id" });
+    }
+
     // Gửi đúng user_id vào service
     const newOrder = await orderService.create(req.body, req.user.user_id);
     res.json(newOrder);
   } catch (err: any) {
     console.error("❌ Error in createOrder:", err.message);
-    res.status(500).json({ error: err.message });
+    res.status(400).json({ message: err.message });
   }
 };
 
@@ -62,7 +66,7 @@ export const update = async (req: AuthRequest, res: Response) => {
     const updated = await orderService.update(req.params.id, req.body, req.user!);
     res.json(updated);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(400).json({ error: err.message });
   }
 };
 
@@ -72,6 +76,6 @@ export const remove = async (req: AuthRequest, res: Response) => {
     const deleted = await orderService.remove(req.params.id);
     res.json(deleted);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(400).json({ error: err.message });
   }
 };
