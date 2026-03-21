@@ -43,7 +43,7 @@ app.post("/api/payos/webhook", // ✅ Thêm /api cho đồng bộ
 const allowedOrigins = [
     "http://localhost:3000",
     "http://localhost:3001",
-    "https://open-data-martket.vercel.app" // ✅ Domain của bạn trên Vercel
+    "https://open-data-martket-fe.vercel.app" // ✅ Domain của bạn trên Vercel
 ];
 
 app.use(
